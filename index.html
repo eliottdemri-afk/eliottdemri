@@ -1,0 +1,1081 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Optimisation Planning Hospitalier</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .section {
+            margin-bottom: 30px;
+            padding: 25px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            border-left: 5px solid #667eea;
+        }
+
+        .section h2 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .form-group label {
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #333;
+        }
+
+        .form-group input,
+        .form-group select {
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .algo-selector {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .algo-card {
+            flex: 1;
+            padding: 20px;
+            border: 3px solid #ddd;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: center;
+        }
+
+        .algo-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+
+        .algo-card.selected {
+            border-color: #667eea;
+            background: #f0f4ff;
+        }
+
+        .algo-card h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .algo-card p {
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .recommendation {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+
+        .recommendation strong {
+            color: #856404;
+        }
+
+        .btn {
+            padding: 15px 40px;
+            font-size: 1.1em;
+            font-weight: 600;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: inline-block;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+
+        .progress-container {
+            display: none;
+            margin: 30px 0;
+            text-align: center;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 30px;
+            background: #e9ecef;
+            border-radius: 15px;
+            overflow: hidden;
+            margin: 20px 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            width: 0%;
+            transition: width 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+        }
+
+        .results {
+            display: none;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .metric-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+
+        .metric-card h3 {
+            color: #667eea;
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+
+        .metric-card p {
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .chart-container {
+            margin: 30px 0;
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .chart-container h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        table th {
+            background: #667eea;
+            color: white;
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        table td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        table tr:hover {
+            background: #f8f9fa;
+        }
+
+        .medecins-table {
+            margin-top: 20px;
+        }
+
+        .medecins-table input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+
+        .add-patient-section {
+            display: none;
+            margin-top: 30px;
+            padding: 25px;
+            background: #e8f4f8;
+            border-radius: 10px;
+            border-left: 5px solid #17a2b8;
+        }
+
+        .loading-spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #ddd;
+        }
+
+        .tab {
+            padding: 12px 24px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-weight: 600;
+            color: #666;
+            transition: all 0.3s;
+        }
+
+        .tab.active {
+            color: #667eea;
+            border-bottom: 3px solid #667eea;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏥 Optimisation Planning Hospitalier</h1>
+            <p>Système intelligent de gestion des opérations chirurgicales</p>
+        </div>
+
+        <div class="content">
+            <!-- Section 1: Configuration Patients -->
+            <div class="section">
+                <h2>📋 Configuration des Patients</h2>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>Nombre de patients (50-500)</label>
+                        <input type="number" id="nbPatients" min="50" max="500" value="100">
+                    </div>
+                    <div class="form-group">
+                        <label>Date de début</label>
+                        <input type="date" id="dateDebut" value="2026-01-01">
+                    </div>
+                    <div class="form-group">
+                        <label>Date de fin</label>
+                        <input type="date" id="dateFin" value="2026-12-31">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section 2: Configuration Hôpital -->
+            <div class="section">
+                <h2>🏥 Configuration de l'Hôpital</h2>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>Nombre de lits</label>
+                        <input type="number" id="nbLits" min="20" max="500" value="100">
+                    </div>
+                    <div class="form-group">
+                        <label>Nombre de blocs opératoires</label>
+                        <input type="number" id="nbSalles" min="2" max="20" value="6">
+                    </div>
+                    <div class="form-group">
+                        <label>Heures max par salle (h)</label>
+                        <input type="number" id="tMaxSalle" min="4" max="12" step="0.5" value="9">
+                    </div>
+                    <div class="form-group">
+                        <label>Heures max par médecin (h)</label>
+                        <input type="number" id="tMaxMedecin" min="4" max="12" step="0.5" value="8">
+                    </div>
+                    <div class="form-group">
+                        <label>Capacité week-end (%)</label>
+                        <input type="number" id="capaciteWeekend" min="0" max="100" value="50">
+                    </div>
+                </div>
+
+                <h3 style="margin-top: 30px; color: #667eea;">Médecins par spécialité</h3>
+                <table class="medecins-table" id="medecinTable">
+                    <thead>
+                        <tr>
+                            <th>Spécialité</th>
+                            <th>Nombre de médecins</th>
+                            <th>Durée moyenne opération (min)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="medecinTableBody">
+                        <!-- Rempli dynamiquement -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Section 3: Choix de l'Algorithme -->
+            <div class="section">
+                <h2>🧬 Choix de l'Algorithme d'Optimisation</h2>
+                <div class="algo-selector">
+                    <div class="algo-card selected" data-algo="genetic">
+                        <h3>🧬 Algorithme Génétique (V5)</h3>
+                        <p>Recommandé pour: échantillons moyens (100-300 patients)</p>
+                        <p style="margin-top: 10px;"><strong>Avantages:</strong> Exploration large de solutions, bonne diversité</p>
+                    </div>
+                    <div class="algo-card" data-algo="annealing">
+                        <h3>🔥 Recuit Simulé (V4)</h3>
+                        <p>Recommandé pour: grands échantillons (300+ patients)</p>
+                        <p style="margin-top: 10px;"><strong>Avantages:</strong> Plus rapide, bonne convergence</p>
+                    </div>
+                </div>
+
+                <div class="recommendation">
+                    <strong>💡 Conseil:</strong> <span id="algoRecommendation">Sélectionnez le nombre de patients pour obtenir une recommandation</span>
+                </div>
+
+                <!-- Onglets pour paramètres des algorithmes -->
+                <div class="tabs">
+                    <button class="tab active" data-tab="genetic-params">Paramètres Génétique</button>
+                    <button class="tab" data-tab="annealing-params">Paramètres Recuit Simulé</button>
+                </div>
+
+                <div class="tab-content active" id="genetic-params">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Taille population</label>
+                            <input type="number" id="taillePopulation" value="20" min="5" max="100">
+                        </div>
+                        <div class="form-group">
+                            <label>Nombre de générations</label>
+                            <input type="number" id="nbGenerations" value="50" min="10" max="200">
+                        </div>
+                        <div class="form-group">
+                            <label>Taux de mutation (0-1)</label>
+                            <input type="number" id="tauxMutation" value="0.2" min="0" max="1" step="0.05">
+                        </div>
+                        <div class="form-group">
+                            <label>Taux d'élitisme (0-1)</label>
+                            <input type="number" id="tauxElitisme" value="0.1" min="0" max="1" step="0.05">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tab-content" id="annealing-params">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Température initiale</label>
+                            <input type="number" id="tInit" value="100" min="10" max="1000">
+                        </div>
+                        <div class="form-group">
+                            <label>Température minimale</label>
+                            <input type="number" id="tMin" value="0.1" min="0.01" max="10" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label>Coefficient de refroidissement</label>
+                            <input type="number" id="alpha" value="0.9" min="0.5" max="0.99" step="0.01">
+                        </div>
+                        <div class="form-group">
+                            <label>Itérations par palier</label>
+                            <input type="number" id="maxIter" value="25" min="5" max="100">
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-top: 20px;">
+                    <label>
+                        <input type="checkbox" id="compareAlgos"> 
+                        Comparer les deux algorithmes (temps d'exécution doublé)
+                    </label>
+                </div>
+            </div>
+
+            <!-- Bouton de lancement -->
+            <div style="text-align: center; margin: 40px 0;">
+                <button class="btn btn-primary" id="btnOptimize">🚀 Lancer l'Optimisation</button>
+            </div>
+
+            <!-- Barre de progression -->
+            <div class="progress-container" id="progressContainer">
+                <div class="loading-spinner"></div>
+                <h3 id="progressText">Initialisation...</h3>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill">0%</div>
+                </div>
+            </div>
+
+            <!-- Résultats -->
+            <div class="results" id="results">
+                <div class="section">
+                    <h2>📊 Résultats de l'Optimisation</h2>
+
+                    <!-- Métriques -->
+                    <div class="metrics-grid" id="metricsGrid">
+                        <!-- Rempli dynamiquement -->
+                    </div>
+
+                    <!-- Graphiques -->
+                    <div class="chart-container">
+                        <h3>📈 Occupation des lits au fil du temps</h3>
+                        <canvas id="chartLits"></canvas>
+                    </div>
+
+                    <div class="chart-container">
+                        <h3>🏥 Opérations par jour</h3>
+                        <canvas id="chartOperations"></canvas>
+                    </div>
+
+                    <div class="chart-container">
+                        <h3>👨‍⚕️ Répartition par spécialité</h3>
+                        <canvas id="chartSpecialites"></canvas>
+                    </div>
+
+                    <!-- Tableau planning -->
+                    <div class="chart-container">
+                        <h3>📋 Planning des opérations</h3>
+                        <button class="btn btn-success" id="btnExportCSV">📥 Exporter en CSV</button>
+                        <button class="btn btn-success" id="btnExportExcel" style="margin-left: 10px;">📥 Exporter en Excel</button>
+                        <div style="max-height: 500px; overflow-y: auto; margin-top: 20px;">
+                            <table id="planningTable">
+                                <thead>
+                                    <tr>
+                                        <th>ID Patient</th>
+                                        <th>Date Opération</th>
+                                        <th>Spécialité</th>
+                                        <th>Salle</th>
+                                        <th>Médecin</th>
+                                        <th>Durée Op (min)</th>
+                                        <th>Durée Séjour (j)</th>
+                                        <th>Écart Date (j)</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="planningTableBody">
+                                    <!-- Rempli dynamiquement -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Section ajout de patient -->
+                    <div class="add-patient-section" id="addPatientSection">
+                        <h3 style="color: #17a2b8; margin-bottom: 20px;">➕ Ajouter un nouveau patient</h3>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label>Âge</label>
+                                <input type="number" id="newPatientAge" min="18" max="100" value="50">
+                            </div>
+                            <div class="form-group">
+                                <label>Sexe</label>
+                                <select id="newPatientSexe">
+                                    <option value="1">Masculin</option>
+                                    <option value="2">Féminin</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Code CCAM</label>
+                                <input type="text" id="newPatientCCAM" placeholder="ex: HMFC004">
+                            </div>
+                            <div class="form-group">
+                                <label>Diagnostic principal</label>
+                                <input type="text" id="newPatientDP" placeholder="ex: I251">
+                            </div>
+                            <div class="form-group">
+                                <label>Date souhaitée</label>
+                                <input type="date" id="newPatientDate">
+                            </div>
+                        </div>
+                        <button class="btn btn-secondary" id="btnAddPatient" style="margin-top: 20px;">➕ Ajouter ce patient</button>
+                        <div id="addPatientResult" style="margin-top: 20px;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration globale
+        const API_URL = 'https://api-prediction-medicale.onrender.com';
+
+        let currentPlanning = [];
+        let currentConfig = null;
+        let chartLits, chartOperations, chartSpecialites;
+
+        // Données par défaut des médecins
+        const defaultMedecins = [
+            {specialite: "Chirurgie digestive", nombre: 7, duree_moyenne: 150},
+            {specialite: "Gynécologie-obstétrique", nombre: 3, duree_moyenne: 80},
+            {specialite: "Neurochirurgie", nombre: 1, duree_moyenne: 135},
+            {specialite: "ORL et chirurgie cervico-faciale", nombre: 2, duree_moyenne: 130},
+            {specialite: "Ophtalmologie", nombre: 1, duree_moyenne: 110},
+            {specialite: "Chirurgie orthopédique et traumatologique", nombre: 8, duree_moyenne: 150},
+            {specialite: "Chirurgie plastique", nombre: 1, duree_moyenne: 158},
+            {specialite: "Stomatologie", nombre: 3, duree_moyenne: 160},
+            {specialite: "Urologie", nombre: 5, duree_moyenne: 90},
+            {specialite: "Chirurgie vasculaire", nombre: 5, duree_moyenne: 145}
+        ];
+
+        // Initialisation
+        document.addEventListener('DOMContentLoaded', () => {
+            initMedecinTable();
+            initEventListeners();
+            updateAlgoRecommendation();
+        });
+
+        function initMedecinTable() {
+            const tbody = document.getElementById('medecinTableBody');
+            tbody.innerHTML = '';
+
+            defaultMedecins.forEach((m, index) => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${m.specialite}</td>
+                    <td><input type="number" class="medecin-nombre" data-index="${index}" value="${m.nombre}" min="1" max="20"></td>
+                    <td><input type="number" class="medecin-duree" data-index="${index}" value="${m.duree_moyenne}" min="30" max="300"></td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function initEventListeners() {
+            // Sélection algorithme
+            document.querySelectorAll('.algo-card').forEach(card => {
+                card.addEventListener('click', () => {
+                    document.querySelectorAll('.algo-card').forEach(c => c.classList.remove('selected'));
+                    card.classList.add('selected');
+                });
+            });
+
+            // Onglets
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.addEventListener('click', () => {
+                    const target = tab.dataset.tab;
+                    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                    tab.classList.add('active');
+                    document.getElementById(target).classList.add('active');
+                });
+            });
+
+            // Bouton optimisation
+            document.getElementById('btnOptimize').addEventListener('click', launchOptimization);
+
+            // Bouton ajout patient
+            document.getElementById('btnAddPatient').addEventListener('click', addPatient);
+
+            // Export
+            document.getElementById('btnExportCSV').addEventListener('click', exportCSV);
+            document.getElementById('btnExportExcel').addEventListener('click', exportExcel);
+
+            // Recommandation algo
+            document.getElementById('nbPatients').addEventListener('input', updateAlgoRecommendation);
+        }
+
+        function updateAlgoRecommendation() {
+            const nbPatients = parseInt(document.getElementById('nbPatients').value);
+            const recommendation = document.getElementById('algoRecommendation');
+
+            if (nbPatients < 100) {
+                recommendation.textContent = 'Pour moins de 100 patients: les deux algorithmes sont rapides et efficaces.';
+            } else if (nbPatients < 300) {
+                recommendation.textContent = 'Pour 100-300 patients: l'algorithme génétique est recommandé (meilleure exploration).';
+            } else {
+                recommendation.textContent = 'Pour plus de 300 patients: le recuit simulé est recommandé (plus rapide et stable).';
+            }
+        }
+
+        function getMedecinConfig() {
+            const medecins = [];
+            document.querySelectorAll('.medecin-nombre').forEach((input, index) => {
+                const nombre = parseInt(input.value);
+                const duree = parseInt(document.querySelectorAll('.medecin-duree')[index].value);
+                medecins.push({
+                    specialite: defaultMedecins[index].specialite,
+                    nombre: nombre,
+                    duree_moyenne: duree
+                });
+            });
+            return medecins;
+        }
+
+        async function launchOptimization() {
+            // Récupérer configuration
+            const nbPatients = parseInt(document.getElementById('nbPatients').value);
+            const dateDebut = document.getElementById('dateDebut').value;
+            const dateFin = document.getElementById('dateFin').value;
+            const nbLits = parseInt(document.getElementById('nbLits').value);
+            const nbSalles = parseInt(document.getElementById('nbSalles').value);
+            const tMaxSalle = parseFloat(document.getElementById('tMaxSalle').value);
+            const tMaxMedecin = parseFloat(document.getElementById('tMaxMedecin').value);
+            const capaciteWeekend = parseFloat(document.getElementById('capaciteWeekend').value) / 100;
+
+            const selectedAlgo = document.querySelector('.algo-card.selected').dataset.algo;
+            const compareAlgos = document.getElementById('compareAlgos').checked;
+
+            const hospitalConfig = {
+                nb_lits: nbLits,
+                nb_salles: nbSalles,
+                t_max_salle: tMaxSalle,
+                t_max_medecin: tMaxMedecin,
+                capacite_weekend: capaciteWeekend,
+                date_debut: dateDebut,
+                date_fin: dateFin,
+                medecins: getMedecinConfig()
+            };
+
+            const algoParams = {
+                algo_type: selectedAlgo,
+                taille_population: parseInt(document.getElementById('taillePopulation').value),
+                nb_generations: parseInt(document.getElementById('nbGenerations').value),
+                taux_mutation: parseFloat(document.getElementById('tauxMutation').value),
+                taux_elitisme: parseFloat(document.getElementById('tauxElitisme').value),
+                t_init: parseFloat(document.getElementById('tInit').value),
+                t_min: parseFloat(document.getElementById('tMin').value),
+                alpha: parseFloat(document.getElementById('alpha').value),
+                max_iter: parseInt(document.getElementById('maxIter').value)
+            };
+
+            currentConfig = hospitalConfig;
+
+            // Afficher barre de progression
+            document.getElementById('progressContainer').style.display = 'block';
+            document.getElementById('results').style.display = 'none';
+
+            try {
+                if (compareAlgos) {
+                    await runComparison(nbPatients, hospitalConfig, algoParams);
+                } else {
+                    await runSingleOptimization(nbPatients, hospitalConfig, algoParams);
+                }
+            } catch (error) {
+                alert('Erreur lors de l'optimisation: ' + error.message);
+                console.error(error);
+            } finally {
+                document.getElementById('progressContainer').style.display = 'none';
+            }
+        }
+
+        async function runSingleOptimization(nbPatients, hospitalConfig, algoParams) {
+            updateProgress(10, 'Envoi de la requête...');
+
+            const response = await fetch(`${API_URL}/optimize`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    nb_patients: nbPatients,
+                    hospital_config: hospitalConfig,
+                    algo_params: algoParams
+                })
+            });
+
+            updateProgress(50, 'Optimisation en cours...');
+
+            if (!response.ok) {
+                throw new Error('Erreur serveur: ' + response.statusText);
+            }
+
+            const data = await response.json();
+
+            updateProgress(100, 'Optimisation terminée!');
+
+            setTimeout(() => {
+                displayResults(data);
+            }, 500);
+        }
+
+        async function runComparison(nbPatients, hospitalConfig, algoParams) {
+            updateProgress(10, 'Lancement comparaison des algorithmes...');
+
+            // Lancer Génétique
+            updateProgress(20, 'Algorithme génétique en cours...');
+            const paramsGenetic = {...algoParams, algo_type: 'genetic'};
+            const responseGenetic = await fetch(`${API_URL}/optimize`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    nb_patients: nbPatients,
+                    hospital_config: hospitalConfig,
+                    algo_params: paramsGenetic
+                })
+            });
+
+            const dataGenetic = await responseGenetic.json();
+
+            // Lancer Recuit Simulé
+            updateProgress(60, 'Recuit simulé en cours...');
+            const paramsAnnealing = {...algoParams, algo_type: 'annealing'};
+            const responseAnnealing = await fetch(`${API_URL}/optimize`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    nb_patients: nbPatients,
+                    hospital_config: hospitalConfig,
+                    algo_params: paramsAnnealing
+                })
+            });
+
+            const dataAnnealing = await responseAnnealing.json();
+
+            updateProgress(100, 'Comparaison terminée!');
+
+            setTimeout(() => {
+                displayComparison(dataGenetic, dataAnnealing);
+            }, 500);
+        }
+
+        function displayResults(data) {
+            currentPlanning = data.planning;
+
+            // Métriques
+            const metricsHtml = `
+                <div class="metric-card">
+                    <h3>${data.nb_patients}</h3>
+                    <p>Patients total</p>
+                </div>
+                <div class="metric-card">
+                    <h3>${data.nb_planifies}</h3>
+                    <p>Patients planifiés</p>
+                </div>
+                <div class="metric-card">
+                    <h3>${data.cout_total.toFixed(2)}</h3>
+                    <p>Coût total</p>
+                </div>
+                <div class="metric-card">
+                    <h3>${data.rmsd_lits.toFixed(2)}</h3>
+                    <p>RMSD Lits</p>
+                </div>
+            `;
+            document.getElementById('metricsGrid').innerHTML = metricsHtml;
+
+            // Graphiques
+            createChartLits(data.occupation_lits);
+            createChartOperations(data.operations_par_jour);
+            createChartSpecialites(data.operations_par_specialite);
+
+            // Tableau
+            fillPlanningTable(data.planning);
+
+            // Afficher résultats
+            document.getElementById('results').style.display = 'block';
+            document.getElementById('addPatientSection').style.display = 'block';
+
+            // Scroll vers résultats
+            document.getElementById('results').scrollIntoView({behavior: 'smooth'});
+        }
+
+        function displayComparison(dataGenetic, dataAnnealing) {
+            // Afficher comparaison
+            alert(`Comparaison terminée!
+
+` +
+                  `Algorithme Génétique:
+` +
+                  `- Coût: ${dataGenetic.cout_total.toFixed(2)}
+` +
+                  `- RMSD: ${dataGenetic.rmsd_lits.toFixed(2)}
+` +
+                  `- Planifiés: ${dataGenetic.nb_planifies}/${dataGenetic.nb_patients}
+
+` +
+                  `Recuit Simulé:
+` +
+                  `- Coût: ${dataAnnealing.cout_total.toFixed(2)}
+` +
+                  `- RMSD: ${dataAnnealing.rmsd_lits.toFixed(2)}
+` +
+                  `- Planifiés: ${dataAnnealing.nb_planifies}/${dataAnnealing.nb_patients}
+
+` +
+                  `Affichage de la meilleure solution...`);
+
+            // Afficher la meilleure
+            const best = dataGenetic.cout_total < dataAnnealing.cout_total ? dataGenetic : dataAnnealing;
+            displayResults(best);
+        }
+
+        function createChartLits(data) {
+            const ctx = document.getElementById('chartLits');
+            if (chartLits) chartLits.destroy();
+
+            chartLits = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.map(d => d.date),
+                    datasets: [{
+                        label: 'Nombre de lits occupés',
+                        data: data.map(d => d.nb_lits),
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {display: true}
+                    }
+                }
+            });
+        }
+
+        function createChartOperations(data) {
+            const ctx = document.getElementById('chartOperations');
+            if (chartOperations) chartOperations.destroy();
+
+            chartOperations = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: data.map(d => d.date),
+                    datasets: [{
+                        label: 'Nombre d'opérations',
+                        data: data.map(d => d.nb_operations),
+                        backgroundColor: '#764ba2'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {display: true}
+                    }
+                }
+            });
+        }
+
+        function createChartSpecialites(data) {
+            const ctx = document.getElementById('chartSpecialites');
+            if (chartSpecialites) chartSpecialites.destroy();
+
+            chartSpecialites = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: data.map(d => d.specialite),
+                    datasets: [{
+                        data: data.map(d => d.nb_operations),
+                        backgroundColor: [
+                            '#667eea', '#764ba2', '#f093fb', '#4facfe',
+                            '#43e97b', '#fa709a', '#fee140', '#30cfd0'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {position: 'right'}
+                    }
+                }
+            });
+        }
+
+        function fillPlanningTable(planning) {
+            const tbody = document.getElementById('planningTableBody');
+            tbody.innerHTML = '';
+
+            planning.forEach(p => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${p.patient_id}</td>
+                    <td>${p.date_operation}</td>
+                    <td>${p.specialite}</td>
+                    <td>Salle ${p.salle + 1}</td>
+                    <td>Médecin ${p.medecin + 1}</td>
+                    <td>${p.duree_op}</td>
+                    <td>${p.duree_sejour.toFixed(1)}</td>
+                    <td>${p.ecart_jours}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        async function addPatient() {
+            const age = parseInt(document.getElementById('newPatientAge').value);
+            const sexe = parseInt(document.getElementById('newPatientSexe').value);
+            const ccam = document.getElementById('newPatientCCAM').value;
+            const dp = document.getElementById('newPatientDP').value;
+            const dateSouhaitee = document.getElementById('newPatientDate').value;
+
+            if (!ccam || !dp || !dateSouhaitee) {
+                alert('Veuillez remplir tous les champs');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/add_patient`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        age, sexe,
+                        acte_ccam: ccam,
+                        dp: dp,
+                        date_souhaitee: dateSouhaitee,
+                        planning_actuel: currentPlanning,
+                        hospital_config: currentConfig
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    document.getElementById('addPatientResult').innerHTML = `
+                        <div style="background: #d4edda; padding: 15px; border-radius: 5px; color: #155724;">
+                            ✅ Patient ajouté avec succès!<br>
+                            Date d'opération: ${data.nouveau_patient.date_operation}<br>
+                            Salle: ${data.nouveau_patient.salle + 1}<br>
+                            Médecin: ${data.nouveau_patient.medecin + 1}
+                        </div>
+                    `;
+
+                    // Ajouter au planning
+                    currentPlanning.push(data.nouveau_patient);
+                    fillPlanningTable(currentPlanning);
+                } else {
+                    document.getElementById('addPatientResult').innerHTML = `
+                        <div style="background: #f8d7da; padding: 15px; border-radius: 5px; color: #721c24;">
+                            ❌ ${data.message}
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                alert('Erreur: ' + error.message);
+            }
+        }
+
+        function exportCSV() {
+            let csv = 'ID Patient,Date Operation,Specialite,Salle,Medecin,Duree Op (min),Duree Sejour (j),Ecart Date (j)
+';
+
+            currentPlanning.forEach(p => {
+                csv += `${p.patient_id},${p.date_operation},${p.specialite},${p.salle+1},${p.medecin+1},${p.duree_op},${p.duree_sejour.toFixed(1)},${p.ecart_jours}
+`;
+            });
+
+            downloadFile(csv, 'planning_hospitalier.csv', 'text/csv');
+        }
+
+        function exportExcel() {
+            // Simple export HTML (peut être amélioré avec une lib comme SheetJS)
+            let html = '<table><thead><tr><th>ID Patient</th><th>Date Operation</th><th>Specialite</th><th>Salle</th><th>Medecin</th><th>Duree Op</th><th>Duree Sejour</th><th>Ecart Date</th></tr></thead><tbody>';
+
+            currentPlanning.forEach(p => {
+                html += `<tr><td>${p.patient_id}</td><td>${p.date_operation}</td><td>${p.specialite}</td><td>${p.salle+1}</td><td>${p.medecin+1}</td><td>${p.duree_op}</td><td>${p.duree_sejour.toFixed(1)}</td><td>${p.ecart_jours}</td></tr>`;
+            });
+
+            html += '</tbody></table>';
+
+            downloadFile(html, 'planning_hospitalier.xls', 'application/vnd.ms-excel');
+        }
+
+        function downloadFile(content, filename, type) {
+            const blob = new Blob([content], {type});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function updateProgress(percent, text) {
+            document.getElementById('progressFill').style.width = percent + '%';
+            document.getElementById('progressFill').textContent = percent + '%';
+            document.getElementById('progressText').textContent = text;
+        }
+    </script>
+</body>
+</html>
