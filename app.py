@@ -9,7 +9,7 @@ from pydantic import BaseModel
 import joblib
 import pandas as pd
 import numpy as np
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 import os
 import random
 import copy
