@@ -731,7 +731,7 @@ class AlgorithmeGenetique:
             )
             operations.append(op)
         
-        solution = Solution(operations, asdict(self.config))
+        solution = Solution(operations, self.config.dict())
         self._affecter_ressources(solution)
         return solution
     
@@ -959,7 +959,7 @@ class RecuitSimule:
             )
             operations.append(op)
         
-        solution = Solution(operations, asdict(self.config))
+        solution = Solution(operations, self.config.dict())
         self._affecter_ressources(solution)
         return solution
     
