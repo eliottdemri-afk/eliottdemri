@@ -647,7 +647,7 @@ def generer_patients_intelligents(nb_patients: int) -> pd.DataFrame:
 def predire_duree_sejour(df_patients: pd.DataFrame) -> pd.DataFrame:
     """
     Prédit la durée de séjour via le modèle ML chargé
-    Retourne DataFrame avec colonne 'duree_sejour_predite'
+    Gère les classes texte ("Court", "Moyen", "Long")
     """
     if classifier is None:
         raise HTTPException(status_code=500, detail="Modèle ML non chargé")
@@ -661,22 +661,33 @@ def predire_duree_sejour(df_patients: pd.DataFrame) -> pd.DataFrame:
     
     X = df[feature_cols].fillna(0)
     
-    # Prédiction classe
-    df["classe_predite"] = classifier.predict(X)
+    # Prédiction classe (retourne "Court", "Moyen", "Long")
+    classes_predites = classifier.predict(X)
+    df["classe_predite"] = classes_predites
     
-    # Prédiction durée selon la classe
+    # Prédiction durée selon la classe TEXTE
     durees = []
     for idx, row in df.iterrows():
-        classe = int(row["classe_predite"])
-        if classe in regressors:
-            X_scaled = scalers[classe].transform([X.iloc[idx]])
-            duree = regressors[classe].predict(X_scaled)[0]
-            durees.append(max(1, duree))
+        classe_texte = str(row["classe_predite"])  # Garder en texte !
+        
+        # Vérifier si le régresseur existe pour cette classe
+        if classe_texte in regressors and regressors[classe_texte] is not None:
+            # Utiliser le scaler correspondant
+            X_scaled = scalers[classe_texte].transform([X.iloc[idx]])
+            duree = regressors[classe_texte].predict(X_scaled)[0]
+            durees.append(max(1, float(duree)))
         else:
-            durees.append(5.0)  # Fallback
+            # Fallback selon la classe texte
+            duree_defaut = {
+                "Court": 2.0,
+                "Moyen": 5.0,
+                "Long": 10.0
+            }.get(classe_texte, 5.0)
+            durees.append(duree_defaut)
     
     df["duree_sejour_predite"] = durees
     return df
+
 # ============================================================================
 # ALGORITHME GÉNÉTIQUE V5 - OPTIMISATION PLANNING
 # ============================================================================
