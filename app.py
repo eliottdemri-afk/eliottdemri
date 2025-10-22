@@ -736,129 +736,125 @@ class AlgorithmeGenetique:
         return solution
     
     def _affecter_ressources(self, solution: Solution):
-        """
-        Affecte médecin, salle, jour à chaque opération
-        Contraintes :
-        - Salle 6 réservée Neuro/Ortho
-        - Weekend capacité réduite
-        - Temps max salle/médecin
-        - Capacité lits
-        """
-        # Reset affectations
-        for op in solution.operations:
-            op.medecin = None
-            op.salle = None
-            op.jour = None
+    """Affecte médecin, salle, jour - VERSION AMÉLIORÉE"""
+    # Reset
+    for op in solution.operations:
+        op.medecin = None
+        op.salle = None
+        op.jour = None
+    
+    # Mélanger l'ordre pour plus de diversité
+    operations_melangees = random.sample(solution.operations, len(solution.operations))
+    
+    # Tracking
+    occupation_medecins = defaultdict(lambda: defaultdict(float))
+    occupation_salles = defaultdict(lambda: defaultdict(float))
+    lits_occupes = defaultdict(int)
+    
+    for op in operations_melangees:
+        planifie = False
+        specialite = op.spe_rss[0] if op.spe_rss else "Autre"
+        nb_medecins = self.medecins_par_spe.get(specialite, 1)
         
-        operations_triees = sorted(solution.operations, key=lambda x: x.id_op)
+        # 🔥 AMÉLIORATION : Essayer TOUT l'horizon temporel
+        jours_possibles = list(range(self.nb_jours_max))
+        random.shuffle(jours_possibles)  # Mélanger pour plus de diversité
         
-        # Tracking occupation
-        occupation_medecins = defaultdict(lambda: defaultdict(float))
-        occupation_salles = defaultdict(lambda: defaultdict(float))
-        lits_occupes = defaultdict(int)
-        
-        for idx, op in enumerate(operations_triees):
-            planifie = False
-            specialite = op.spe_rss[0] if op.spe_rss else "Autre"
-            nb_medecins = self.medecins_par_spe.get(specialite, 1)
+        for jour_test in jours_possibles[:min(100, self.nb_jours_max)]:  # Limiter à 100 essais
+            capacite = self.capacite_weekend if self._est_weekend(jour_test) else 1.0
+            t_max_salle_jour = self.t_max_salle * capacite
+            t_max_medecin_jour = self.t_max_medecin * capacite
             
-            # Essayer de planifier sur 60 jours
-            for delta in range(60):
-                jour_test = (idx * 2) + delta  # Répartition initiale
-                if jour_test >= self.nb_jours_max:
+            # 🔥 FIX : Calcul robuste des lits requis
+            try:
+                duree_rum_jours = max(1, int(float(op.duree_rum)))
+            except (ValueError, TypeError):
+                duree_rum_jours = 3  # Fallback
+            
+            lits_requis = duree_rum_jours + 1
+            
+            if lits_occupes[jour_test] + lits_requis > self.nb_lits:
+                continue
+            
+            # Trouver médecin disponible
+            medecin_trouve = None
+            for m in range(nb_medecins):
+                if occupation_medecins[jour_test][m] + op.duree_op <= t_max_medecin_jour:
+                    medecin_trouve = m
                     break
-                
-                # Capacité weekend
-                capacite = self.capacite_weekend if self._est_weekend(jour_test) else 1.0
-                t_max_salle_jour = self.t_max_salle * capacite
-                t_max_medecin_jour = self.t_max_medecin * capacite
-                
-                # Vérifier lits disponibles
-                lits_requis = max(1, int(float(op.duree_rum))) + 1
-                if lits_occupes[jour_test] + lits_requis > self.nb_lits:
-                    continue
-                
-                # Trouver médecin disponible
-                medecin_trouve = None
-                for m in range(nb_medecins):
-                    if occupation_medecins[jour_test][m] + op.duree_op <= t_max_medecin_jour:
-                        medecin_trouve = m
+            
+            if medecin_trouve is None:
+                continue
+            
+            # Trouver salle disponible
+            salle_trouvee = None
+            if specialite in ["Neurochirurgie", "Chirurgie orthopédique et traumatologique"]:
+                salle_test = self.nb_salles - 1
+                if occupation_salles[jour_test][salle_test] + op.duree_op <= t_max_salle_jour:
+                    salle_trouvee = salle_test
+            else:
+                for s in range(self.nb_salles - 1):
+                    if occupation_salles[jour_test][s] + op.duree_op <= t_max_salle_jour:
+                        salle_trouvee = s
                         break
-                
-                if medecin_trouve is None:
-                    continue
-                
-                # Trouver salle disponible
-                salle_trouvee = None
-                
-                # Contrainte : Neuro/Ortho → Salle 6 uniquement
-                if specialite in ["Neurochirurgie", "Chirurgie orthopédique et traumatologique"]:
-                    salle_test = self.nb_salles - 1  # Dernière salle
-                    if occupation_salles[jour_test][salle_test] + op.duree_op <= t_max_salle_jour:
-                        salle_trouvee = salle_test
-                else:
-                    # Autres spécialités : salles 1-5
-                    for s in range(self.nb_salles - 1):
-                        if occupation_salles[jour_test][s] + op.duree_op <= t_max_salle_jour:
-                            salle_trouvee = s
-                            break
-                
-                if salle_trouvee is not None:
-                    # Affecter ressources
-                    op.jour = jour_test
-                    op.medecin = medecin_trouve
-                    op.salle = salle_trouvee
-                    
-                    # Mettre à jour occupation
-                    occupation_medecins[jour_test][medecin_trouve] += op.duree_op
-                    occupation_salles[jour_test][salle_trouvee] += op.duree_op
-                    
-                    # Occuper lits pendant toute la durée du séjour
-                    for d in range(lits_requis):
-                        if jour_test + d < self.nb_jours_max:
-                            lits_occupes[jour_test + d] += 1
-                    
-                    planifie = True
-                    break
             
-            # Si pas planifié, forcer en fin de période
-            if not planifie:
-                op.jour = self.nb_jours_max - 1
-                op.medecin = 0
-                op.salle = 0
+            if salle_trouvee is not None:
+                # Affecter
+                op.jour = jour_test
+                op.medecin = medecin_trouve
+                op.salle = salle_trouvee
+                
+                # Mettre à jour occupation
+                occupation_medecins[jour_test][medecin_trouve] += op.duree_op
+                occupation_salles[jour_test][salle_trouvee] += op.duree_op
+                
+                for d in range(lits_requis):
+                    if jour_test + d < self.nb_jours_max:
+                        lits_occupes[jour_test + d] += 1
+                
+                planifie = True
+                break
+        
+        # Si vraiment impossible, laisser non planifié (None)
+        # L'algorithme s'adaptera via la fonction de coût
+
     
     def _calculer_cout(self, solution: Solution) -> float:
-        """
-        Calcule coût de la solution :
-        - Pénalité patients non planifiés
-        - RMSD occupation lits (régularité)
-        """
-        penalite_non_planifie = 0
-        
-        for op in solution.operations:
-            if op.jour is None:
-                penalite_non_planifie += 10000
-        
-        # Calculer occupation lits par jour
-        lits_par_jour = defaultdict(int)
-        for op in solution.operations:
-            if op.jour is not None:
+    """Calcule coût - VERSION AMÉLIORÉE"""
+    # 🔥 Pénalité plus douce pour patients non planifiés
+    nb_non_planifies = sum(1 for op in solution.operations if op.jour is None)
+    penalite_non_planifie = nb_non_planifies * 500  # Au lieu de 10000
+    
+    # Calcul occupation lits
+    lits_par_jour = defaultdict(int)
+    for op in solution.operations:
+        if op.jour is not None:
+            try:
                 duree_rum = max(1, int(float(op.duree_rum))) + 1
-                for d in range(duree_rum):
-                    if op.jour + d < self.nb_jours_max:
-                        lits_par_jour[op.jour + d] += 1
-        
-        # RMSD occupation lits
-        occupations = list(lits_par_jour.values())
-        if occupations:
-            moyenne = sum(occupations) / len(occupations)
-            rmsd = np.sqrt(sum((x - moyenne)**2 for x in occupations) / len(occupations))
-        else:
-            rmsd = 0
-        
-        cout_total = penalite_non_planifie + rmsd * 100
-        solution.cout = cout_total
-        return cout_total
+            except (ValueError, TypeError):
+                duree_rum = 3
+            
+            for d in range(duree_rum):
+                if op.jour + d < self.nb_jours_max:
+                    lits_par_jour[op.jour + d] += 1
+    
+    # RMSD occupation lits
+    occupations = list(lits_par_jour.values())
+    if occupations:
+        moyenne = sum(occupations) / len(occupations)
+        rmsd = np.sqrt(sum((x - moyenne)**2 for x in occupations) / len(occupations))
+    else:
+        rmsd = 0
+    
+    # 🔥 Bonus pour taux d'occupation élevé
+    nb_planifies = len(solution.operations) - nb_non_planifies
+    taux_planification = nb_planifies / len(solution.operations) if solution.operations else 0
+    bonus_planification = (1 - taux_planification) * 1000
+    
+    cout_total = penalite_non_planifie + rmsd * 50 + bonus_planification
+    solution.cout = cout_total
+    return cout_total
+
     
     def _selection(self, population: List[Solution]) -> Solution:
         """Sélection par tournoi"""
@@ -866,17 +862,21 @@ class AlgorithmeGenetique:
         return min(tournoi, key=lambda s: s.cout)
     
     def _croisement(self, parent1: Solution, parent2: Solution) -> Solution:
-        """Croisement entre 2 parents"""
-        enfant = parent1.copy()
-        
-        # Mélanger dates d'opération
-        for op in enfant.operations:
-            if random.random() < 0.5 and op.jour is not None:
-                decalage = random.randint(-7, 7)
-                op.jour = max(0, min(self.nb_jours_max - 1, op.jour + decalage))
-        
-        self._affecter_ressources(enfant)
-        return enfant
+    """Croisement à un point - VERSION AMÉLIORÉE"""
+    enfant = Solution([copy.deepcopy(op) for op in parent1.operations], parent1.config)
+    
+    # Point de croisement aléatoire
+    point_croisement = random.randint(0, len(enfant.operations))
+    
+    # Prendre jours de parent2 après le point de croisement
+    for i in range(point_croisement, len(enfant.operations)):
+        if parent2.operations[i].jour is not None:
+            enfant.operations[i].jour = parent2.operations[i].jour
+    
+    # Réaffecter ressources avec les nouveaux jours
+    self._affecter_ressources(enfant)
+    return enfant
+
     
     def _mutation(self, solution: Solution):
         """Mutation aléatoire"""
