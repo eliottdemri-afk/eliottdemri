@@ -763,7 +763,7 @@ class AlgorithmeGenetique:
                 t_max_medecin_jour = self.t_max_medecin * capacite
                 
                 # Vérifier lits disponibles
-                lits_requis = int(op.duree_rum) + 1
+                lits_requis = max(1, int(float(op.duree_rum))) + 1
                 if lits_occupes[jour_test] + lits_requis > self.nb_lits:
                     continue
                 
@@ -832,7 +832,7 @@ class AlgorithmeGenetique:
         lits_par_jour = defaultdict(int)
         for op in solution.operations:
             if op.jour is not None:
-                duree_rum = int(op.duree_rum) + 1
+                duree_rum = max(1, int(float(op.duree_rum))) + 1
                 for d in range(duree_rum):
                     if op.jour + d < self.nb_jours_max:
                         lits_par_jour[op.jour + d] += 1
@@ -978,7 +978,7 @@ class RecuitSimule:
                 t_max_salle_jour = self.t_max_salle * capacite
                 t_max_medecin_jour = self.t_max_medecin * capacite
                 
-                lits_requis = int(op.duree_rum) + 1
+                lits_requis = max(1, int(float(op.duree_rum))) + 1
                 if lits_occupes[jour_test] + lits_requis > self.nb_lits:
                     continue
                 
@@ -1029,7 +1029,7 @@ class RecuitSimule:
         lits_par_jour = defaultdict(int)
         for op in solution.operations:
             if op.jour is not None:
-                duree_rum = int(op.duree_rum) + 1
+                duree_rum = max(1, int(float(op.duree_rum))) + 1
                 for d in range(duree_rum):
                     if op.jour + d < self.nb_jours_max:
                         lits_par_jour[op.jour + d] += 1
@@ -1170,7 +1170,7 @@ async def optimize_planning(request: OptimizationRequest):
                 patient = next(p for p in patients if p.id == op.id_op)
                 operations_par_specialite[patient.specialite] += 1
                 
-                duree_rum = int(op.duree_rum) + 1
+                duree_rum = max(1, int(float(op.duree_rum))) + 1
                 for d in range(duree_rum):
                     lits_par_jour[op.jour + d] += 1
         
