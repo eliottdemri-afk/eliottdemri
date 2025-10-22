@@ -10,7 +10,7 @@ from pydantic import BaseModel
 import joblib
 import pandas as pd
 import numpy as np
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Tuple
 import os
 import json
 import io
@@ -58,7 +58,14 @@ except Exception as e:
 try:
     bdd_path = os.path.join(os.path.dirname(__file__), "bdd_traitee_1_classified.csv")
     df_bdd = pd.read_csv(bdd_path)
-    CCAM_TO_SPE = dict(zip(df_bdd["acte_ccam"], df_bdd["specialite"]))
+    
+    CCAM_TO_SPE = {}
+    for _, row in df_bdd.iterrows():
+        acte = row["acte_classant"]
+        classification = row["Classification"]
+        # Prendre la première spécialité
+        premiere_spe = classification.split(" ; ")[0].strip()
+        CCAM_TO_SPE[acte] = premiere_spe
     print(f"✅ Base de données chargée: {len(CCAM_TO_SPE)} codes CCAM")
 except Exception as e:
     print(f"❌ Erreur chargement BDD: {e}")
