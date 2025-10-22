@@ -611,7 +611,7 @@
         ];
 
         // Initialisation
-        document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener('DOMContentLoaded', function() {
             initMedecinTable();
             initEventListeners();
             updateAlgoRecommendation();
@@ -621,32 +621,36 @@
             const tbody = document.getElementById('medecinTableBody');
             tbody.innerHTML = '';
 
-            defaultMedecins.forEach((m, index) => {
+            defaultMedecins.forEach(function(m, index) {
                 const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td>${m.specialite}</td>
-                    <td><input type="number" class="medecin-nombre" data-index="${index}" value="${m.nombre}" min="1" max="20"></td>
-                    <td><input type="number" class="medecin-duree" data-index="${index}" value="${m.duree_moyenne}" min="30" max="300"></td>
-                `;
+                row.innerHTML = '<td>' + m.specialite + '</td>' +
+                    '<td><input type="number" class="medecin-nombre" data-index="' + index + '" value="' + m.nombre + '" min="1" max="20"></td>' +
+                    '<td><input type="number" class="medecin-duree" data-index="' + index + '" value="' + m.duree_moyenne + '" min="30" max="300"></td>';
                 tbody.appendChild(row);
             });
         }
 
         function initEventListeners() {
             // Sélection algorithme
-            document.querySelectorAll('.algo-card').forEach(card => {
-                card.addEventListener('click', () => {
-                    document.querySelectorAll('.algo-card').forEach(c => c.classList.remove('selected'));
+            document.querySelectorAll('.algo-card').forEach(function(card) {
+                card.addEventListener('click', function() {
+                    document.querySelectorAll('.algo-card').forEach(function(c) {
+                        c.classList.remove('selected');
+                    });
                     card.classList.add('selected');
                 });
             });
 
             // Onglets
-            document.querySelectorAll('.tab').forEach(tab => {
-                tab.addEventListener('click', () => {
+            document.querySelectorAll('.tab').forEach(function(tab) {
+                tab.addEventListener('click', function() {
                     const target = tab.dataset.tab;
-                    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-                    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                    document.querySelectorAll('.tab').forEach(function(t) {
+                        t.classList.remove('active');
+                    });
+                    document.querySelectorAll('.tab-content').forEach(function(c) {
+                        c.classList.remove('active');
+                    });
                     tab.classList.add('active');
                     document.getElementById(target).classList.add('active');
                 });
@@ -673,15 +677,15 @@
             if (nbPatients < 100) {
                 recommendation.textContent = 'Pour moins de 100 patients: les deux algorithmes sont rapides et efficaces.';
             } else if (nbPatients < 300) {
-                recommendation.textContent = 'Pour 100-300 patients: l'algorithme génétique est recommandé (meilleure exploration).';
+                recommendation.textContent = 'Pour 100-300 patients: algorithme génétique recommandé (meilleure exploration).';
             } else {
-                recommendation.textContent = 'Pour plus de 300 patients: le recuit simulé est recommandé (plus rapide et stable).';
+                recommendation.textContent = 'Pour plus de 300 patients: recuit simulé recommandé (plus rapide et stable).';
             }
         }
 
         function getMedecinConfig() {
             const medecins = [];
-            document.querySelectorAll('.medecin-nombre').forEach((input, index) => {
+            document.querySelectorAll('.medecin-nombre').forEach(function(input, index) {
                 const nombre = parseInt(input.value);
                 const duree = parseInt(document.querySelectorAll('.medecin-duree')[index].value);
                 medecins.push({
@@ -693,7 +697,7 @@
             return medecins;
         }
 
-        async function launchOptimization() {
+        function launchOptimization() {
             // Récupérer configuration
             const nbPatients = parseInt(document.getElementById('nbPatients').value);
             const dateDebut = document.getElementById('dateDebut').value;
@@ -736,24 +740,18 @@
             document.getElementById('progressContainer').style.display = 'block';
             document.getElementById('results').style.display = 'none';
 
-            try {
-                if (compareAlgos) {
-                    await runComparison(nbPatients, hospitalConfig, algoParams);
-                } else {
-                    await runSingleOptimization(nbPatients, hospitalConfig, algoParams);
-                }
-            } catch (error) {
-                alert('Erreur lors de l'optimisation: ' + error.message);
-                console.error(error);
-            } finally {
-                document.getElementById('progressContainer').style.display = 'none';
-            }
+            runSingleOptimization(nbPatients, hospitalConfig, algoParams)
+                .catch(function(error) {
+                    alert('Erreur: ' + error.message);
+                    console.error(error);
+                    document.getElementById('progressContainer').style.display = 'none';
+                });
         }
 
-        async function runSingleOptimization(nbPatients, hospitalConfig, algoParams) {
+        function runSingleOptimization(nbPatients, hospitalConfig, algoParams) {
             updateProgress(10, 'Envoi de la requête...');
 
-            const response = await fetch(`${API_URL}/optimize`, {
+            return fetch(API_URL + '/optimize', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
@@ -761,85 +759,34 @@
                     hospital_config: hospitalConfig,
                     algo_params: algoParams
                 })
+            })
+            .then(function(response) {
+                updateProgress(50, 'Optimisation en cours...');
+
+                if (!response.ok) {
+                    throw new Error('Erreur serveur: ' + response.statusText);
+                }
+
+                return response.json();
+            })
+            .then(function(data) {
+                updateProgress(100, 'Optimisation terminée!');
+
+                setTimeout(function() {
+                    displayResults(data);
+                }, 500);
             });
-
-            updateProgress(50, 'Optimisation en cours...');
-
-            if (!response.ok) {
-                throw new Error('Erreur serveur: ' + response.statusText);
-            }
-
-            const data = await response.json();
-
-            updateProgress(100, 'Optimisation terminée!');
-
-            setTimeout(() => {
-                displayResults(data);
-            }, 500);
-        }
-
-        async function runComparison(nbPatients, hospitalConfig, algoParams) {
-            updateProgress(10, 'Lancement comparaison des algorithmes...');
-
-            // Lancer Génétique
-            updateProgress(20, 'Algorithme génétique en cours...');
-            const paramsGenetic = {...algoParams, algo_type: 'genetic'};
-            const responseGenetic = await fetch(`${API_URL}/optimize`, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    nb_patients: nbPatients,
-                    hospital_config: hospitalConfig,
-                    algo_params: paramsGenetic
-                })
-            });
-
-            const dataGenetic = await responseGenetic.json();
-
-            // Lancer Recuit Simulé
-            updateProgress(60, 'Recuit simulé en cours...');
-            const paramsAnnealing = {...algoParams, algo_type: 'annealing'};
-            const responseAnnealing = await fetch(`${API_URL}/optimize`, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    nb_patients: nbPatients,
-                    hospital_config: hospitalConfig,
-                    algo_params: paramsAnnealing
-                })
-            });
-
-            const dataAnnealing = await responseAnnealing.json();
-
-            updateProgress(100, 'Comparaison terminée!');
-
-            setTimeout(() => {
-                displayComparison(dataGenetic, dataAnnealing);
-            }, 500);
         }
 
         function displayResults(data) {
             currentPlanning = data.planning;
 
             // Métriques
-            const metricsHtml = `
-                <div class="metric-card">
-                    <h3>${data.nb_patients}</h3>
-                    <p>Patients total</p>
-                </div>
-                <div class="metric-card">
-                    <h3>${data.nb_planifies}</h3>
-                    <p>Patients planifiés</p>
-                </div>
-                <div class="metric-card">
-                    <h3>${data.cout_total.toFixed(2)}</h3>
-                    <p>Coût total</p>
-                </div>
-                <div class="metric-card">
-                    <h3>${data.rmsd_lits.toFixed(2)}</h3>
-                    <p>RMSD Lits</p>
-                </div>
-            `;
+            const metricsHtml = '<div class="metric-card"><h3>' + data.nb_patients + '</h3><p>Patients total</p></div>' +
+                '<div class="metric-card"><h3>' + data.nb_planifies + '</h3><p>Patients planifiés</p></div>' +
+                '<div class="metric-card"><h3>' + data.cout_total.toFixed(2) + '</h3><p>Coût total</p></div>' +
+                '<div class="metric-card"><h3>' + data.rmsd_lits.toFixed(2) + '</h3><p>RMSD Lits</p></div>';
+
             document.getElementById('metricsGrid').innerHTML = metricsHtml;
 
             // Graphiques
@@ -858,36 +805,6 @@
             document.getElementById('results').scrollIntoView({behavior: 'smooth'});
         }
 
-        function displayComparison(dataGenetic, dataAnnealing) {
-            // Afficher comparaison
-            alert(`Comparaison terminée!
-
-` +
-                  `Algorithme Génétique:
-` +
-                  `- Coût: ${dataGenetic.cout_total.toFixed(2)}
-` +
-                  `- RMSD: ${dataGenetic.rmsd_lits.toFixed(2)}
-` +
-                  `- Planifiés: ${dataGenetic.nb_planifies}/${dataGenetic.nb_patients}
-
-` +
-                  `Recuit Simulé:
-` +
-                  `- Coût: ${dataAnnealing.cout_total.toFixed(2)}
-` +
-                  `- RMSD: ${dataAnnealing.rmsd_lits.toFixed(2)}
-` +
-                  `- Planifiés: ${dataAnnealing.nb_planifies}/${dataAnnealing.nb_patients}
-
-` +
-                  `Affichage de la meilleure solution...`);
-
-            // Afficher la meilleure
-            const best = dataGenetic.cout_total < dataAnnealing.cout_total ? dataGenetic : dataAnnealing;
-            displayResults(best);
-        }
-
         function createChartLits(data) {
             const ctx = document.getElementById('chartLits');
             if (chartLits) chartLits.destroy();
@@ -895,10 +812,10 @@
             chartLits = new Chart(ctx, {
                 type: 'line',
                 data: {
-                    labels: data.map(d => d.date),
+                    labels: data.map(function(d) { return d.date; }),
                     datasets: [{
                         label: 'Nombre de lits occupés',
-                        data: data.map(d => d.nb_lits),
+                        data: data.map(function(d) { return d.nb_lits; }),
                         borderColor: '#667eea',
                         backgroundColor: 'rgba(102, 126, 234, 0.1)',
                         tension: 0.4
@@ -920,10 +837,10 @@
             chartOperations = new Chart(ctx, {
                 type: 'bar',
                 data: {
-                    labels: data.map(d => d.date),
+                    labels: data.map(function(d) { return d.date; }),
                     datasets: [{
-                        label: 'Nombre d'opérations',
-                        data: data.map(d => d.nb_operations),
+                        label: 'Nombre opérations',
+                        data: data.map(function(d) { return d.nb_operations; }),
                         backgroundColor: '#764ba2'
                     }]
                 },
@@ -943,9 +860,9 @@
             chartSpecialites = new Chart(ctx, {
                 type: 'doughnut',
                 data: {
-                    labels: data.map(d => d.specialite),
+                    labels: data.map(function(d) { return d.specialite; }),
                     datasets: [{
-                        data: data.map(d => d.nb_operations),
+                        data: data.map(function(d) { return d.nb_operations; }),
                         backgroundColor: [
                             '#667eea', '#764ba2', '#f093fb', '#4facfe',
                             '#43e97b', '#fa709a', '#fee140', '#30cfd0'
@@ -965,23 +882,21 @@
             const tbody = document.getElementById('planningTableBody');
             tbody.innerHTML = '';
 
-            planning.forEach(p => {
+            planning.forEach(function(p) {
                 const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td>${p.patient_id}</td>
-                    <td>${p.date_operation}</td>
-                    <td>${p.specialite}</td>
-                    <td>Salle ${p.salle + 1}</td>
-                    <td>Médecin ${p.medecin + 1}</td>
-                    <td>${p.duree_op}</td>
-                    <td>${p.duree_sejour.toFixed(1)}</td>
-                    <td>${p.ecart_jours}</td>
-                `;
+                row.innerHTML = '<td>' + p.patient_id + '</td>' +
+                    '<td>' + p.date_operation + '</td>' +
+                    '<td>' + p.specialite + '</td>' +
+                    '<td>Salle ' + (p.salle + 1) + '</td>' +
+                    '<td>Médecin ' + (p.medecin + 1) + '</td>' +
+                    '<td>' + p.duree_op + '</td>' +
+                    '<td>' + p.duree_sejour.toFixed(1) + '</td>' +
+                    '<td>' + p.ecart_jours + '</td>';
                 tbody.appendChild(row);
             });
         }
 
-        async function addPatient() {
+        function addPatient() {
             const age = parseInt(document.getElementById('newPatientAge').value);
             const sexe = parseInt(document.getElementById('newPatientSexe').value);
             const ccam = document.getElementById('newPatientCCAM').value;
@@ -993,65 +908,64 @@
                 return;
             }
 
-            try {
-                const response = await fetch(`${API_URL}/add_patient`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        age, sexe,
-                        acte_ccam: ccam,
-                        dp: dp,
-                        date_souhaitee: dateSouhaitee,
-                        planning_actuel: currentPlanning,
-                        hospital_config: currentConfig
-                    })
-                });
-
-                const data = await response.json();
-
+            fetch(API_URL + '/add_patient', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    age: age,
+                    sexe: sexe,
+                    acte_ccam: ccam,
+                    dp: dp,
+                    date_souhaitee: dateSouhaitee,
+                    planning_actuel: currentPlanning,
+                    hospital_config: currentConfig
+                })
+            })
+            .then(function(response) {
+                return response.json();
+            })
+            .then(function(data) {
                 if (data.success) {
-                    document.getElementById('addPatientResult').innerHTML = `
-                        <div style="background: #d4edda; padding: 15px; border-radius: 5px; color: #155724;">
-                            ✅ Patient ajouté avec succès!<br>
-                            Date d'opération: ${data.nouveau_patient.date_operation}<br>
-                            Salle: ${data.nouveau_patient.salle + 1}<br>
-                            Médecin: ${data.nouveau_patient.medecin + 1}
-                        </div>
-                    `;
+                    document.getElementById('addPatientResult').innerHTML = 
+                        '<div style="background: #d4edda; padding: 15px; border-radius: 5px; color: #155724;">' +
+                        'Patient ajouté avec succès!<br>' +
+                        'Date opération: ' + data.nouveau_patient.date_operation + '<br>' +
+                        'Salle: ' + (data.nouveau_patient.salle + 1) + '<br>' +
+                        'Médecin: ' + (data.nouveau_patient.medecin + 1) + '</div>';
 
-                    // Ajouter au planning
                     currentPlanning.push(data.nouveau_patient);
                     fillPlanningTable(currentPlanning);
                 } else {
-                    document.getElementById('addPatientResult').innerHTML = `
-                        <div style="background: #f8d7da; padding: 15px; border-radius: 5px; color: #721c24;">
-                            ❌ ${data.message}
-                        </div>
-                    `;
+                    document.getElementById('addPatientResult').innerHTML =
+                        '<div style="background: #f8d7da; padding: 15px; border-radius: 5px; color: #721c24;">' +
+                        data.message + '</div>';
                 }
-            } catch (error) {
+            })
+            .catch(function(error) {
                 alert('Erreur: ' + error.message);
-            }
+            });
         }
 
         function exportCSV() {
-            let csv = 'ID Patient,Date Operation,Specialite,Salle,Medecin,Duree Op (min),Duree Sejour (j),Ecart Date (j)
-';
+            let csv = 'ID Patient,Date Operation,Specialite,Salle,Medecin,Duree Op (min),Duree Sejour (j),Ecart Date (j)\n';
 
-            currentPlanning.forEach(p => {
-                csv += `${p.patient_id},${p.date_operation},${p.specialite},${p.salle+1},${p.medecin+1},${p.duree_op},${p.duree_sejour.toFixed(1)},${p.ecart_jours}
-`;
+            currentPlanning.forEach(function(p) {
+                csv += p.patient_id + ',' + p.date_operation + ',' + p.specialite + ',' + 
+                       (p.salle+1) + ',' + (p.medecin+1) + ',' + p.duree_op + ',' + 
+                       p.duree_sejour.toFixed(1) + ',' + p.ecart_jours + '\n';
             });
 
             downloadFile(csv, 'planning_hospitalier.csv', 'text/csv');
         }
 
         function exportExcel() {
-            // Simple export HTML (peut être amélioré avec une lib comme SheetJS)
             let html = '<table><thead><tr><th>ID Patient</th><th>Date Operation</th><th>Specialite</th><th>Salle</th><th>Medecin</th><th>Duree Op</th><th>Duree Sejour</th><th>Ecart Date</th></tr></thead><tbody>';
 
-            currentPlanning.forEach(p => {
-                html += `<tr><td>${p.patient_id}</td><td>${p.date_operation}</td><td>${p.specialite}</td><td>${p.salle+1}</td><td>${p.medecin+1}</td><td>${p.duree_op}</td><td>${p.duree_sejour.toFixed(1)}</td><td>${p.ecart_jours}</td></tr>`;
+            currentPlanning.forEach(function(p) {
+                html += '<tr><td>' + p.patient_id + '</td><td>' + p.date_operation + '</td><td>' + 
+                        p.specialite + '</td><td>' + (p.salle+1) + '</td><td>' + (p.medecin+1) + 
+                        '</td><td>' + p.duree_op + '</td><td>' + p.duree_sejour.toFixed(1) + 
+                        '</td><td>' + p.ecart_jours + '</td></tr>';
             });
 
             html += '</tbody></table>';
@@ -1060,7 +974,7 @@
         }
 
         function downloadFile(content, filename, type) {
-            const blob = new Blob([content], {type});
+            const blob = new Blob([content], {type: type});
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
