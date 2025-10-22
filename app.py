@@ -1,9 +1,9 @@
 """
-API FastAPI - Optimisation Planning Hospitalier V3.0 FINALE
-Avec algorithmes Génétique2 et RecuitSimulé2 (version performante)
+API FastAPI - Optimisation Planning Hospitalier V3.1 FINALE
+Avec mode asynchrone (background tasks) pour éviter timeout
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import joblib
@@ -14,9 +14,11 @@ import os
 import random
 import copy
 import math
+import uuid
 from datetime import datetime, timedelta
 from dataclasses import dataclass
 from collections import defaultdict
+from threading import Lock
 import warnings
 from sklearn.exceptions import DataConversionWarning
 
@@ -25,10 +27,17 @@ warnings.filterwarnings('ignore', category=UserWarning, module='sklearn')
 warnings.filterwarnings('ignore', category=DataConversionWarning)
 
 # ============================================================================
+# STOCKAGE RÉSULTATS OPTIMISATIONS (POUR MODE ASYNCHRONE)
+# ============================================================================
+
+optimization_results = {}
+results_lock = Lock()
+
+# ============================================================================
 # INITIALISATION FASTAPI
 # ============================================================================
 
-app = FastAPI(title="API Optimisation Hospitalière V3", version="3.0")
+app = FastAPI(title="API Optimisation Hospitalière V3.1 Async", version="3.1")
 
 app.add_middleware(
     CORSMiddleware,
@@ -43,16 +52,15 @@ app.add_middleware(
 # ============================================================================
 
 VACANCES_SCOLAIRES = [
-    (datetime(2025, 2, 8), datetime(2025, 2, 23)),   # Hiver
-    (datetime(2025, 4, 5), datetime(2025, 4, 21)),   # Printemps
-    (datetime(2025, 7, 5), datetime(2025, 9, 1)),    # Été
-    (datetime(2025, 10, 18), datetime(2025, 11, 3)), # Toussaint
-    (datetime(2025, 12, 20), datetime(2026, 1, 5)),  # Noël
-    (datetime(2026, 2, 7), datetime(2026, 2, 22)),   # Hiver 2026
+    (datetime(2025, 2, 8), datetime(2025, 2, 23)),
+    (datetime(2025, 4, 5), datetime(2025, 4, 21)),
+    (datetime(2025, 7, 5), datetime(2025, 9, 1)),
+    (datetime(2025, 10, 18), datetime(2025, 11, 3)),
+    (datetime(2025, 12, 20), datetime(2026, 1, 5)),
+    (datetime(2026, 2, 7), datetime(2026, 2, 22)),
 ]
 
 def est_vacances(date_jour: datetime) -> bool:
-    """Vérifie si une date est pendant les vacances scolaires"""
     return any(debut <= date_jour <= fin for debut, fin in VACANCES_SCOLAIRES)
 
 # ============================================================================
@@ -73,7 +81,7 @@ except Exception as e:
     classifier, regressors, scalers, feature_cols = None, None, None, None
 
 # ============================================================================
-# CHARGEMENT BDD (MAPPING CCAM → SPÉCIALITÉ)
+# CHARGEMENT BDD
 # ============================================================================
 
 print("Chargement BDD CCAM...")
@@ -95,9 +103,8 @@ except Exception as e:
     CCAM_TO_SPE = {}
 
 # ============================================================================
-# 🔥 LISTE COMPLÈTE DES 2910 CODES CCAM AUTORISÉS
+# LISTE CODES CCAM (👉 COLLE TA LISTE ICI)
 # ============================================================================
-
 
 LISTE_ACTES_AUTORISES = [
     "HMFC004","FCFA009","JDDB007","JGFE023","LFAA002","JCAE001","DELF005","FCCA001",
@@ -465,7 +472,6 @@ LISTE_ACTES_AUTORISES = [
     "DEPF033","JEPE002","EDSF004","EBLA003","JCGE004","DEPF033","EDSF004","EDSF004",
     "DDAF008","EDSF004","LBLD010","DEPF033","HBMA006","EDSF004"
 ]
-
 print(f"✅ {len(LISTE_ACTES_AUTORISES)} codes CCAM autorisés")
 
 # ============================================================================
@@ -614,15 +620,13 @@ class OptimizationRequest(BaseModel):
     algo_params: AlgoParams
 
 # ============================================================================
-# GÉNÉRATION INTELLIGENTE DES PATIENTS
+# GÉNÉRATION PATIENTS + PRÉDICTION ML
 # ============================================================================
 
 def generer_patients_intelligents(nb_patients: int) -> pd.DataFrame:
-    """Génère patients de manière réaliste"""
     actes_valides = [acte for acte in LISTE_ACTES_AUTORISES if acte in CCAM_TO_SPE]
-    
     if not actes_valides:
-        raise RuntimeError("Aucun acte CCAM valide trouvé dans la BDD")
+        raise RuntimeError("Aucun acte CCAM valide")
     
     data = []
     for i in range(nb_patients):
@@ -632,29 +636,17 @@ def generer_patients_intelligents(nb_patients: int) -> pd.DataFrame:
         age = random.randint(age_min, age_max)
         p_homme = PROBA_HOMME_PAR_SPECIALITE.get(spec, 0.5)
         sexe = 1 if random.random() < p_homme else 2
-        dp_choices = DP_PAR_SPECIALITE.get(spec, ['K35'])
-        dp = random.choice(dp_choices)
+        dp = random.choice(DP_PAR_SPECIALITE.get(spec, ['K35']))
         
-        data.append({
-            'age': age,
-            'sexe': sexe,
-            'acte_ccam': acte,
-            'dp': dp
-        })
+        data.append({'age': age, 'sexe': sexe, 'acte_ccam': acte, 'dp': dp})
     
     return pd.DataFrame(data)
 
-# ============================================================================
-# PRÉDICTION DURÉE DE SÉJOUR
-# ============================================================================
-
 def predire_duree_sejour(df_patients: pd.DataFrame) -> pd.DataFrame:
-    """Prédit la durée de séjour via le modèle ML"""
     if classifier is None:
         raise HTTPException(status_code=500, detail="Modèle ML non chargé")
     
     df = df_patients.copy()
-    
     for col in feature_cols:
         if col not in df.columns:
             df[col] = 0
@@ -666,7 +658,6 @@ def predire_duree_sejour(df_patients: pd.DataFrame) -> pd.DataFrame:
     durees = []
     for idx, row in df.iterrows():
         classe_texte = str(row["classe_predite"])
-        
         if classe_texte in regressors and regressors[classe_texte] is not None:
             X_row_df = pd.DataFrame([X.iloc[idx]], columns=X.columns)
             X_scaled = scalers[classe_texte].transform(X_row_df)
@@ -679,7 +670,9 @@ def predire_duree_sejour(df_patients: pd.DataFrame) -> pd.DataFrame:
     df["duree_sejour_predite"] = durees
     return df
 
-
+# ============================================================================
+# ALGORITHMES (Génétique V2 + Recuit Simulé V2)
+# ============================================================================
 # ============================================================================
 # ALGORITHME GÉNÉTIQUE V2 (VERSION PERFORMANTE - INSPIRÉ TON AMI)
 # ============================================================================
@@ -1176,48 +1169,44 @@ class RecuitSimuleV2:
         return meilleure_solution
 
 # ============================================================================
-# ENDPOINTS API
+# FONCTION D'OPTIMISATION EN ARRIÈRE-PLAN
 # ============================================================================
 
-@app.get("/")
-def root():
-    return {
-        "message": "API Optimisation Planning Hospitalier V3.0",
-        "version": "3.0",
-        "algorithms": ["genetic_v2", "annealing_v2"],
-        "endpoints": ["/health", "/optimize"]
-    }
-
-@app.get("/health")
-def health_check():
-    return {
-        "status": "healthy",
-        "model_loaded": classifier is not None,
-        "ccam_codes": len(CCAM_TO_SPE),
-        "actes_autorises": len(LISTE_ACTES_AUTORISES),
-        "vacances_scolaires": len(VACANCES_SCOLAIRES)
-    }
-
-@app.post("/optimize")
-async def optimize_planning(request: OptimizationRequest):
+def run_optimization_background(task_id: str, request: OptimizationRequest):
+    """Exécute l'optimisation en arrière-plan (pas de timeout)"""
     try:
-        print(f"🚀 Début optimisation : {request.nb_patients} patients")
+        print(f"🚀 [Task {task_id}] Début optimisation : {request.nb_patients} patients")
         
-        # 1. Générer patients intelligemment
+        # Mise à jour : Génération patients
+        with results_lock:
+            optimization_results[task_id] = {
+                "status": "running",
+                "progress": 10,
+                "message": "Génération des patients...",
+                "start_time": datetime.now().isoformat()
+            }
+        
+        # 1. Générer patients
         df_patients = generer_patients_intelligents(request.nb_patients)
-        print(f"✅ Patients générés: {len(df_patients)}")
+        print(f"✅ [Task {task_id}] {len(df_patients)} patients générés")
         
-        # 2. Prédire durées de séjour (ML)
+        with results_lock:
+            optimization_results[task_id]["progress"] = 30
+            optimization_results[task_id]["message"] = "Prédiction des durées de séjour (ML)..."
+        
+        # 2. Prédire durées de séjour
         df_patients = predire_duree_sejour(df_patients)
-        print(f"✅ Durées séjour prédites")
+        print(f"✅ [Task {task_id}] Durées prédites")
+        
+        with results_lock:
+            optimization_results[task_id]["progress"] = 50
+            optimization_results[task_id]["message"] = "Création des objets Patient..."
         
         # 3. Créer objets Patient
         patients = []
         for idx, row in df_patients.iterrows():
             specialite = CCAM_TO_SPE.get(row["acte_ccam"], "Chirurgie digestive")
-            
-            # Trouver durée opération selon spécialité
-            duree_op = 120  # Défaut
+            duree_op = 120
             for m in request.hospital_config.medecins:
                 if m["specialite"] == specialite:
                     duree_op = m["duree_moyenne"]
@@ -1235,21 +1224,26 @@ async def optimize_planning(request: OptimizationRequest):
             )
             patients.append(patient)
         
-        print(f"✅ {len(patients)} objets Patient créés")
+        print(f"✅ [Task {task_id}] {len(patients)} objets Patient créés")
         
-        # 4. Lancer algorithme d'optimisation
-        print(f"🧬 Lancement algorithme: {request.algo_params.algo_type}")
+        with results_lock:
+            optimization_results[task_id]["progress"] = 60
+            optimization_results[task_id]["message"] = f"Lancement algorithme {request.algo_params.algo_type}..."
         
+        # 4. Lancer optimisation
         if request.algo_params.algo_type == "genetic":
             algo = AlgorithmeGenetiqueV2(patients, request.hospital_config, request.algo_params)
         elif request.algo_params.algo_type == "annealing":
             algo = RecuitSimuleV2(patients, request.hospital_config, request.algo_params)
         else:
-            # Par défaut, utiliser génétique
             algo = AlgorithmeGenetiqueV2(patients, request.hospital_config, request.algo_params)
         
         solution = algo.optimiser()
-        print(f"✅ Optimisation terminée - Coût: {solution.cout:.2f}")
+        print(f"✅ [Task {task_id}] Optimisation terminée - Coût: {solution.cout:.2f}")
+        
+        with results_lock:
+            optimization_results[task_id]["progress"] = 90
+            optimization_results[task_id]["message"] = "Formatage des résultats..."
         
         # 5. Formater résultats
         lits_par_jour = defaultdict(int)
@@ -1259,7 +1253,6 @@ async def optimize_planning(request: OptimizationRequest):
         for op in solution.operations:
             if op.jour is not None:
                 operations_par_jour[op.jour] += 1
-                
                 patient = next(p for p in patients if p.id == op.id_op)
                 operations_par_specialite[patient.specialite] += 1
                 
@@ -1299,10 +1292,9 @@ async def optimize_planning(request: OptimizationRequest):
                     "est_weekend": algo._est_periode_reduite(op.jour),
                 })
         
-        # Trier par date
         planning = sorted(planning, key=lambda x: x["jour"])
         
-        # Occupation lits par jour
+        # Occupation lits
         occupation_lits = []
         for jour in sorted(lits_par_jour.keys()):
             date = date_debut + timedelta(days=jour)
@@ -1330,7 +1322,7 @@ async def optimize_planning(request: OptimizationRequest):
             for spe, nb in operations_par_specialite.items()
         ]
         
-        # Calcul RMSD
+        # Calculs statistiques
         occupations = list(lits_par_jour.values())
         if occupations:
             moyenne = sum(occupations) / len(occupations)
@@ -1338,59 +1330,162 @@ async def optimize_planning(request: OptimizationRequest):
         else:
             rmsd = 0.0
         
-        # Statistiques supplémentaires
         nb_planifies = len([op for op in solution.operations if op.jour is not None])
         taux_planification = (nb_planifies / len(patients)) * 100 if patients else 0
         
-        # Calcul variation totale
         lits_arr = [lits_par_jour.get(j, 0) for j in range(algo.nb_jours_max)]
         tv = sum(abs(lits_arr[i] - lits_arr[i-1]) for i in range(1, len(lits_arr)))
         
-        print(f"✅ Résultats: {nb_planifies}/{len(patients)} patients planifiés ({taux_planification:.1f}%)")
+        print(f"✅ [Task {task_id}] Résultats: {nb_planifies}/{len(patients)} patients planifiés ({taux_planification:.1f}%)")
         
-        return {
-            "success": True,
-            "algorithm": request.algo_params.algo_type,
-            "nb_patients": len(patients),
-            "nb_planifies": nb_planifies,
-            "taux_planification": round(taux_planification, 2),
-            "cout_total": float(solution.cout),
-            "rmsd_lits": rmsd,
-            "variation_totale": float(tv),
-            "planning": planning,
-            "occupation_lits": occupation_lits,
-            "operations_par_jour": operations_jour,
-            "operations_par_specialite": specialites,
-            "statistiques": {
-                "nb_jours_utilises": len(operations_par_jour),
-                "occupation_moyenne_lits": round(moyenne, 2) if occupations else 0,
-                "occupation_max_lits": max(occupations) if occupations else 0,
-                "nb_operations_weekend": sum(1 for p in planning if p["est_weekend"]),
-                "premier_jour": min(operations_par_jour.keys()) if operations_par_jour else 0,
-                "dernier_jour": max(operations_par_jour.keys()) if operations_par_jour else 0
+        # 6. Stocker résultats finaux
+        with results_lock:
+            optimization_results[task_id] = {
+                "status": "completed",
+                "progress": 100,
+                "message": "Optimisation terminée avec succès!",
+                "end_time": datetime.now().isoformat(),
+                "result": {
+                    "success": True,
+                    "algorithm": request.algo_params.algo_type,
+                    "nb_patients": len(patients),
+                    "nb_planifies": nb_planifies,
+                    "taux_planification": round(taux_planification, 2),
+                    "cout_total": float(solution.cout),
+                    "rmsd_lits": rmsd,
+                    "variation_totale": float(tv),
+                    "planning": planning,
+                    "occupation_lits": occupation_lits,
+                    "operations_par_jour": operations_jour,
+                    "operations_par_specialite": specialites,
+                    "statistiques": {
+                        "nb_jours_utilises": len(operations_par_jour),
+                        "occupation_moyenne_lits": round(moyenne, 2) if occupations else 0,
+                        "occupation_max_lits": max(occupations) if occupations else 0,
+                        "nb_operations_weekend": sum(1 for p in planning if p["est_weekend"]),
+                        "premier_jour": min(operations_par_jour.keys()) if operations_par_jour else 0,
+                        "dernier_jour": max(operations_par_jour.keys()) if operations_par_jour else 0
+                    }
+                }
             }
-        }
+        
+        print(f"🎉 [Task {task_id}] Tâche terminée avec succès!")
         
     except Exception as e:
         import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Erreur optimisation: {str(e)}")
+        error_trace = traceback.format_exc()
+        print(f"❌ [Task {task_id}] Erreur: {e}")
+        print(error_trace)
+        
+        with results_lock:
+            optimization_results[task_id] = {
+                "status": "error",
+                "progress": 0,
+                "message": f"Erreur lors de l'optimisation",
+                "error": str(e),
+                "error_trace": error_trace,
+                "end_time": datetime.now().isoformat()
+            }
 
 # ============================================================================
-# LANCEMENT SERVEUR AVEC TIMEOUT AUGMENTÉ
+# ENDPOINTS API
+# ============================================================================
+
+@app.get("/")
+def root():
+    return {
+        "message": "API Optimisation Planning Hospitalier V3.1 Async",
+        "version": "3.1",
+        "mode": "asynchrone",
+        "algorithms": ["genetic", "annealing"],
+        "endpoints": ["/health", "/optimize", "/optimize/status/{task_id}"]
+    }
+
+@app.get("/health")
+def health_check():
+    return {
+        "status": "healthy",
+        "model_loaded": classifier is not None,
+        "ccam_codes": len(CCAM_TO_SPE),
+        "actes_autorises": len(LISTE_ACTES_AUTORISES),
+        "vacances_scolaires": len(VACANCES_SCOLAIRES),
+        "tasks_in_progress": len([t for t in optimization_results.values() if t.get("status") == "running"])
+    }
+
+@app.post("/optimize")
+async def optimize_planning(request: OptimizationRequest, background_tasks: BackgroundTasks):
+    """Lance l'optimisation en arrière-plan (mode asynchrone)"""
+    
+    # Générer ID unique pour cette tâche
+    task_id = str(uuid.uuid4())[:8]  # ID court pour faciliter
+    
+    print(f"📝 Nouvelle tâche créée: {task_id}")
+    
+    # Initialiser statut
+    with results_lock:
+        optimization_results[task_id] = {
+            "status": "pending",
+            "progress": 0,
+            "message": "Tâche créée, en attente de démarrage...",
+            "created_at": datetime.now().isoformat()
+        }
+    
+    # Lancer en arrière-plan
+    background_tasks.add_task(run_optimization_background, task_id, request)
+    
+    return {
+        "success": True,
+        "task_id": task_id,
+        "status": "pending",
+        "message": "Optimisation lancée en arrière-plan. Utilisez l'endpoint /optimize/status/{task_id} pour suivre l'avancement.",
+        "check_status_url": f"/optimize/status/{task_id}"
+    }
+
+@app.get("/optimize/status/{task_id}")
+async def get_optimization_status(task_id: str):
+    """Récupère le statut d'une optimisation en cours ou terminée"""
+    
+    with results_lock:
+        if task_id not in optimization_results:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Tâche {task_id} introuvable. Elle a peut-être expiré ou n'a jamais existé."
+            )
+        
+        return optimization_results[task_id]
+
+@app.delete("/optimize/{task_id}")
+async def delete_optimization_result(task_id: str):
+    """Supprime les résultats d'une optimisation (nettoyage mémoire)"""
+    
+    with results_lock:
+        if task_id in optimization_results:
+            del optimization_results[task_id]
+            return {"success": True, "message": f"Résultats de la tâche {task_id} supprimés"}
+        else:
+            raise HTTPException(status_code=404, detail="Tâche introuvable")
+
+# ============================================================================
+# LANCEMENT SERVEUR
 # ============================================================================
 
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     
-    # Configuration pour Render avec timeout élevé
+    print("=" * 60)
+    print("🚀 API OPTIMISATION PLANNING HOSPITALIER V3.1 - MODE ASYNC")
+    print("=" * 60)
+    print(f"Port: {port}")
+    print(f"Mode: Asynchrone (background tasks)")
+    print(f"Timeout: Illimité")
+    print("=" * 60)
+    
     uvicorn.run(
         app,
         host="0.0.0.0",
         port=port,
-        timeout_keep_alive=300,
-        timeout_notify=300,
-        workers=1,  # Important : 1 seul worker pour éviter timeout
+        workers=1,
         log_level="info"
     )
+
