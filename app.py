@@ -2,7 +2,12 @@
 API FastAPI - Optimisation Planning Hospitalier FINALE
 Version corrigée avec génération intelligente + 2910 codes CCAM
 """
+import warnings
+from sklearn.exceptions import DataConversionWarning
 
+# Supprimer les warnings sklearn
+warnings.filterwarnings('ignore', category=UserWarning, module='sklearn')
+warnings.filterwarnings('ignore', category=DataConversionWarning)
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
