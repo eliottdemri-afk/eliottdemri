@@ -1377,20 +1377,20 @@ async def optimize_planning(request: OptimizationRequest):
         raise HTTPException(status_code=500, detail=f"Erreur optimisation: {str(e)}")
 
 # ============================================================================
-# LANCEMENT SERVEUR
+# LANCEMENT SERVEUR AVEC TIMEOUT AUGMENTÉ
 # ============================================================================
 
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     
-    # Configuration optimisée pour Render
+    # Configuration pour Render avec timeout élevé
     uvicorn.run(
-        app, 
-        host="0.0.0.0", 
+        app,
+        host="0.0.0.0",
         port=port,
-        timeout_keep_alive=300,  # 5 minutes timeout
+        timeout_keep_alive=300,
         timeout_notify=300,
+        workers=1,  # Important : 1 seul worker pour éviter timeout
         log_level="info"
     )
-
