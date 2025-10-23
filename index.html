@@ -751,32 +751,84 @@
         function runSingleOptimization(nbPatients, hospitalConfig, algoParams) {
             updateProgress(10, 'Envoi de la requête...');
 
-            return fetch(API_URL + '/optimize', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    nb_patients: nbPatients,
-                    hospital_config: hospitalConfig,
-                    algo_params: algoParams
+    // 1. Lancer l'optimisation (retourne immédiatement)
+    return fetch(API_URL + '/optimize', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            nb_patients: nbPatients,
+            hospital_config: hospitalConfig,
+            algo_params: algoParams
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        const taskId = data.task_id;
+        console.log('Task ID:', taskId);
+        
+        // 2. Poller le statut toutes les 2 secondes
+        return pollOptimizationStatus(taskId);
+    });
+}
+
+function pollOptimizationStatus(taskId) {
+    return new Promise((resolve, reject) => {
+        let attempts = 0;
+        const maxAttempts = 180; // 6 minutes max (180 * 2s)
+        
+        const interval = setInterval(() => {
+            attempts++;
+            
+            fetch(API_URL + '/optimize/status/' + taskId)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Tâche introuvable ou serveur redémarré');
+                    }
+                    return response.json();
                 })
-            })
-            .then(function(response) {
-                updateProgress(50, 'Optimisation en cours...');
-
-                if (!response.ok) {
-                    throw new Error('Erreur serveur: ' + response.statusText);
-                }
-
-                return response.json();
-            })
-            .then(function(data) {
-                updateProgress(100, 'Optimisation terminée!');
-
-                setTimeout(function() {
-                    displayResults(data);
-                }, 500);
-            });
-        }
+                .then(data => {
+                    console.log('Status:', data.status, 'Progress:', data.progress);
+                    
+                    // Cas 1 : Serveur redémarré
+                    if (data.status === 'server_restarted') {
+                        clearInterval(interval);
+                        alert('⚠️ Le serveur a redémarré. Veuillez relancer l\'optimisation.');
+                        reject(new Error('Serveur redémarré'));
+                        return;
+                    }
+                    
+                    // Cas 2 : En cours
+                    updateProgress(data.progress, data.message || 'Optimisation en cours...');
+                    
+                    // Cas 3 : Terminé
+                    if (data.status === 'completed') {
+                        clearInterval(interval);
+                        resolve(data.result);
+                    }
+                    
+                    // Cas 4 : Erreur
+                    else if (data.status === 'error') {
+                        clearInterval(interval);
+                        reject(new Error(data.error || 'Erreur inconnue'));
+                    }
+                    
+                    // Cas 5 : Timeout
+                    if (attempts >= maxAttempts) {
+                        clearInterval(interval);
+                        reject(new Error('Timeout : optimisation trop longue (> 6 min)'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Erreur polling:', error);
+                    clearInterval(interval);
+                    
+                    // Afficher message explicite
+                    alert('❌ Erreur : ' + error.message + '\n\nLe serveur a peut-être redémarré. Veuillez relancer l\'optimisation.');
+                    reject(error);
+                });
+        }, 2000); // Vérifier toutes les 2 secondes
+    });
+}
 
         function displayResults(data) {
             currentPlanning = data.planning;
@@ -992,4 +1044,3 @@
         }
     </script>
 </body>
-</html>
