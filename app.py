@@ -26,12 +26,37 @@ from sklearn.exceptions import DataConversionWarning
 warnings.filterwarnings('ignore', category=UserWarning, module='sklearn')
 warnings.filterwarnings('ignore', category=DataConversionWarning)
 
+
 # ============================================================================
-# STOCKAGE RÉSULTATS OPTIMISATIONS (POUR MODE ASYNCHRONE)
+# STOCKAGE RÉSULTATS + DÉTECTION REDÉMARRAGE
 # ============================================================================
+
+import time
 
 optimization_results = {}
 results_lock = Lock()
+server_start_time = time.time()
+
+def is_task_expired(task_data: dict, max_age_hours: int = 24) -> bool:
+    """Vérifie si une tâche a expiré"""
+    if "created_at" in task_data:
+        created = datetime.fromisoformat(task_data["created_at"])
+        age = datetime.now() - created
+        return age.total_seconds() > max_age_hours * 3600
+    return False
+
+def cleanup_expired_tasks():
+    """Nettoie les tâches expirées (+ de 24h)"""
+    with results_lock:
+        expired = [
+            task_id for task_id, data in optimization_results.items()
+            if is_task_expired(data, 24)
+        ]
+        for task_id in expired:
+            del optimization_results[task_id]
+        
+        if expired:
+            print(f"🧹 {len(expired)} tâches expirées supprimées")
 
 # ============================================================================
 # INITIALISATION FASTAPI
@@ -1403,13 +1428,33 @@ def root():
 
 @app.get("/health")
 def health_check():
+    # Nettoyer tâches expirées
+    cleanup_expired_tasks()
+    
+    uptime_seconds = time.time() - server_start_time
+    uptime_minutes = int(uptime_seconds / 60)
+    
+    with results_lock:
+        nb_pending = len([t for t in optimization_results.values() if t.get("status") == "pending"])
+        nb_running = len([t for t in optimization_results.values() if t.get("status") == "running"])
+        nb_completed = len([t for t in optimization_results.values() if t.get("status") == "completed"])
+        nb_error = len([t for t in optimization_results.values() if t.get("status") == "error"])
+    
     return {
         "status": "healthy",
+        "uptime_minutes": uptime_minutes,
+        "server_restarted_recently": uptime_minutes < 5,
         "model_loaded": classifier is not None,
         "ccam_codes": len(CCAM_TO_SPE),
         "actes_autorises": len(LISTE_ACTES_AUTORISES),
         "vacances_scolaires": len(VACANCES_SCOLAIRES),
-        "tasks_in_progress": len([t for t in optimization_results.values() if t.get("status") == "running"])
+        "tasks": {
+            "pending": nb_pending,
+            "running": nb_running,
+            "completed": nb_completed,
+            "error": nb_error,
+            "total": len(optimization_results)
+        }
     }
 
 @app.post("/optimize")
@@ -1441,15 +1486,28 @@ async def optimize_planning(request: OptimizationRequest, background_tasks: Back
         "check_status_url": f"/optimize/status/{task_id}"
     }
 
-@app.get("/optimize/status/{task_id}")
+app.get("/optimize/status/{task_id}")
 async def get_optimization_status(task_id: str):
-    """Récupère le statut d'une optimisation en cours ou terminée"""
+    """Récupère le statut d'une optimisation"""
+    
+    # Vérifier si le serveur vient de redémarrer
+    uptime_seconds = time.time() - server_start_time
+    if uptime_seconds < 300:  # < 5 minutes
+        # Serveur récent, la tâche a peut-être été perdue
+        with results_lock:
+            if task_id not in optimization_results:
+                return {
+                    "status": "server_restarted",
+                    "message": "Le serveur a redémarré récemment. Votre tâche a été perdue. Veuillez relancer l'optimisation.",
+                    "server_uptime_seconds": int(uptime_seconds),
+                    "suggestion": "Relancez l'optimisation"
+                }
     
     with results_lock:
         if task_id not in optimization_results:
             raise HTTPException(
-                status_code=404, 
-                detail=f"Tâche {task_id} introuvable. Elle a peut-être expiré ou n'a jamais existé."
+                status_code=404,
+                detail=f"Tâche {task_id} introuvable. Soit elle a expiré (> 24h), soit le serveur a redémarré."
             )
         
         return optimization_results[task_id]
