@@ -1198,7 +1198,34 @@ class RecuitSimuleV2:
 # ============================================================================
 
 def run_optimization_background(task_id: str, request: OptimizationRequest):
-    """Exécute l'optimisation en arrière-plan (pas de timeout)"""
+    """Exécute l'optimisation en arrière-plan"""
+    
+    print(f"🚀 [BACKGROUND] Démarrage tâche {task_id}")
+    
+    # Vérifier que la tâche existe
+    with results_lock:
+        if task_id not in optimization_results:
+            print(f"❌ [BACKGROUND] ERREUR: Tâche {task_id} introuvable au démarrage!")
+            optimization_results[task_id] = {
+                "status": "error",
+                "error": "Tâche perdue au démarrage",
+                "created_at": datetime.now().isoformat()
+            }
+            return
+    
+    try:
+        print(f"✅ [BACKGROUND] Tâche {task_id} trouvée, démarrage optimisation...")
+        
+        # Mise à jour : Génération patients
+        with results_lock:
+            optimization_results[task_id] = {
+                "status": "running",
+                "progress": 10,
+                "message": "Génération des patients...",
+                "start_time": datetime.now().isoformat()
+            }
+        
+        print(f"🔄 [BACKGROUND] Tâche {task_id} mise à jour: running 10%")
     try:
         print(f"🚀 [Task {task_id}] Début optimisation : {request.nb_patients} patients")
         
@@ -1456,60 +1483,89 @@ def health_check():
             "total": len(optimization_results)
         }
     }
-
 @app.post("/optimize")
 async def optimize_planning(request: OptimizationRequest, background_tasks: BackgroundTasks):
-    """Lance l'optimisation en arrière-plan (mode asynchrone)"""
+    """Lance l'optimisation en arrière-plan (mode asynchrone robuste)"""
     
-    # Générer ID unique pour cette tâche
-    task_id = str(uuid.uuid4())[:8]  # ID court pour faciliter
-    
-    print(f"📝 Nouvelle tâche créée: {task_id}")
-    
-    # Initialiser statut
-    with results_lock:
-        optimization_results[task_id] = {
+    try:
+        # Générer ID unique pour cette tâche
+        task_id = str(uuid.uuid4())[:8]
+        
+        print(f"📝 [API] Nouvelle tâche créée: {task_id}")
+        print(f"📝 [API] Params: {request.nb_patients} patients, algo={request.algo_params.algo_type}")
+        
+        # Initialiser statut IMMÉDIATEMENT dans le dictionnaire
+        initial_status = {
             "status": "pending",
             "progress": 0,
             "message": "Tâche créée, en attente de démarrage...",
-            "created_at": datetime.now().isoformat()
+            "created_at": datetime.now().isoformat(),
+            "task_id": task_id
         }
-    
-    # Lancer en arrière-plan
-    background_tasks.add_task(run_optimization_background, task_id, request)
-    
-    return {
-        "success": True,
-        "task_id": task_id,
-        "status": "pending",
-        "message": "Optimisation lancée en arrière-plan. Utilisez l'endpoint /optimize/status/{task_id} pour suivre l'avancement.",
-        "check_status_url": f"/optimize/status/{task_id}"
-    }
+        
+        with results_lock:
+            optimization_results[task_id] = initial_status
+            print(f"✅ [API] Tâche {task_id} stockée dans optimization_results")
+            print(f"✅ [API] Nombre total de tâches: {len(optimization_results)}")
+        
+        # Vérifier que la tâche est bien stockée
+        with results_lock:
+            if task_id not in optimization_results:
+                raise RuntimeError(f"Erreur critique: tâche {task_id} non stockée!")
+        
+        # Lancer en arrière-plan
+        background_tasks.add_task(run_optimization_background, task_id, request)
+        print(f"✅ [API] Background task ajoutée pour {task_id}")
+        
+        return {
+            "success": True,
+            "task_id": task_id,
+            "status": "pending",
+            "message": "✅ Optimisation lancée en arrière-plan.",
+            "check_status_url": f"/optimize/status/{task_id}",
+            "instructions": "Vérifiez le statut toutes les 2 secondes via l'URL ci-dessus"
+        }
+        
+    except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"❌ [API] Erreur création tâche: {e}")
+        print(error_trace)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur lors de la création de la tâche: {str(e)}"
+        )
 
-app.get("/optimize/status/{task_id}")
+
+@app.get("/optimize/status/{task_id}")
 async def get_optimization_status(task_id: str):
     """Récupère le statut d'une optimisation"""
     
-    # Vérifier si le serveur vient de redémarrer
-    uptime_seconds = time.time() - server_start_time
-    if uptime_seconds < 300:  # < 5 minutes
-        # Serveur récent, la tâche a peut-être été perdue
-        with results_lock:
-            if task_id not in optimization_results:
+    print(f"📊 [STATUS] Requête statut pour tâche: {task_id}")
+    
+    with results_lock:
+        print(f"📊 [STATUS] Tâches actuelles: {list(optimization_results.keys())}")
+        
+        if task_id not in optimization_results:
+            print(f"❌ [STATUS] Tâche {task_id} INTROUVABLE!")
+            print(f"❌ [STATUS] Tâches disponibles: {list(optimization_results.keys())}")
+            
+            # Vérifier uptime
+            uptime_seconds = time.time() - server_start_time
+            if uptime_seconds < 300:
                 return {
                     "status": "server_restarted",
-                    "message": "Le serveur a redémarré récemment. Votre tâche a été perdue. Veuillez relancer l'optimisation.",
+                    "message": f"Le serveur a redémarré il y a {int(uptime_seconds)}s. Votre tâche a été perdue.",
                     "server_uptime_seconds": int(uptime_seconds),
                     "suggestion": "Relancez l'optimisation"
                 }
-    
-    with results_lock:
-        if task_id not in optimization_results:
+            
             raise HTTPException(
                 status_code=404,
-                detail=f"Tâche {task_id} introuvable. Soit elle a expiré (> 24h), soit le serveur a redémarré."
+                detail=f"Tâche {task_id} introuvable. Tâches actuelles: {list(optimization_results.keys())}"
             )
         
+        print(f"✅ [STATUS] Tâche {task_id} trouvée: {optimization_results[task_id].get('status')}")
         return optimization_results[task_id]
 
 @app.delete("/optimize/{task_id}")
