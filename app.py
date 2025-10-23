@@ -1196,7 +1196,6 @@ class RecuitSimuleV2:
 # ============================================================================
 # FONCTION D'OPTIMISATION EN ARRIÈRE-PLAN
 # ============================================================================
-
 def run_optimization_background(task_id: str, request: OptimizationRequest):
     """Exécute l'optimisation en arrière-plan"""
     
@@ -1213,8 +1212,10 @@ def run_optimization_background(task_id: str, request: OptimizationRequest):
             }
             return
     
+    # ✅ UN SEUL BLOC TRY POUR TOUTE LA FONCTION
     try:
         print(f"✅ [BACKGROUND] Tâche {task_id} trouvée, démarrage optimisation...")
+        print(f"🚀 [Task {task_id}] Début optimisation : {request.nb_patients} patients")
         
         # Mise à jour : Génération patients
         with results_lock:
@@ -1226,17 +1227,6 @@ def run_optimization_background(task_id: str, request: OptimizationRequest):
             }
         
         print(f"🔄 [BACKGROUND] Tâche {task_id} mise à jour: running 10%")
-    try:
-        print(f"🚀 [Task {task_id}] Début optimisation : {request.nb_patients} patients")
-        
-        # Mise à jour : Génération patients
-        with results_lock:
-            optimization_results[task_id] = {
-                "status": "running",
-                "progress": 10,
-                "message": "Génération des patients...",
-                "start_time": datetime.now().isoformat()
-            }
         
         # 1. Générer patients
         df_patients = generer_patients_intelligents(request.nb_patients)
@@ -1422,7 +1412,8 @@ def run_optimization_background(task_id: str, request: OptimizationRequest):
             }
         
         print(f"🎉 [Task {task_id}] Tâche terminée avec succès!")
-        
+    
+    # ✅ BLOC EXCEPT POUR TOUTE LA FONCTION
     except Exception as e:
         import traceback
         error_trace = traceback.format_exc()
@@ -1433,11 +1424,13 @@ def run_optimization_background(task_id: str, request: OptimizationRequest):
             optimization_results[task_id] = {
                 "status": "error",
                 "progress": 0,
-                "message": f"Erreur lors de l'optimisation",
+                "message": "Erreur lors de l'optimisation",
                 "error": str(e),
                 "error_trace": error_trace,
                 "end_time": datetime.now().isoformat()
             }
+
+
 
 # ============================================================================
 # ENDPOINTS API
