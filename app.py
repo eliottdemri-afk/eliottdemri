@@ -128,7 +128,7 @@ except Exception as e:
     CCAM_TO_SPE = {}
 
 # ============================================================================
-# LISTE CODES CCAM (👉 COLLE TA LISTE ICI)
+# LISTE CODES CCAM 
 # ============================================================================
 
 LISTE_ACTES_AUTORISES = [
@@ -695,11 +695,9 @@ def predire_duree_sejour(df_patients: pd.DataFrame) -> pd.DataFrame:
     df["duree_sejour_predite"] = durees
     return df
 
+
 # ============================================================================
-# ALGORITHMES (Génétique V2 + Recuit Simulé V2)
-# ============================================================================
-# ============================================================================
-# ALGORITHME GÉNÉTIQUE V2 (VERSION PERFORMANTE - INSPIRÉ TON AMI)
+# ALGORITHME GÉNÉTIQUE V2 
 # ============================================================================
 
 class AlgorithmeGenetiqueV2:
@@ -957,7 +955,7 @@ class AlgorithmeGenetiqueV2:
         return meilleure_solution
 
 # ============================================================================
-# RECUIT SIMULÉ V2 (VERSION PERFORMANTE - INSPIRÉ TON AMI)
+# RECUIT SIMULÉ V2 
 # ============================================================================
 
 class RecuitSimuleV2:
